@@ -1,7 +1,9 @@
 using BlazorChat.Components;
 using BlazorChat.Components.Account;
 using BlazorChat.Data;
+using BlazorChat.Hubs;
 using BlazorChat.Models;
+using BlazorChat.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +13,13 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
+});
 
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();
@@ -30,14 +39,19 @@ builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<AppUser>(options =>
     {
-        options.SignIn.RequireConfirmedAccount = true;
+        options.SignIn.RequireConfirmedAccount = false;
         options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
 
+// Application services
 builder.Services.AddSingleton<IEmailSender<AppUser>, IdentityNoOpEmailSender>();
+builder.Services.AddScoped<IMessageService, MessageService>();
+builder.Services.AddScoped<IStoryService, StoryService>();
+builder.Services.AddSingleton<IPresenceService, PresenceService>();
+
 
 var app = builder.Build();
 
@@ -63,5 +77,9 @@ app.MapRazorComponents<App>()
 
 // Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();
+
+// map signalR hubs
+app.MapBlazorHub();
+app.MapHub<ChatHub>("/chathub");
 
 app.Run();
