@@ -16,7 +16,7 @@ namespace BlazorChat.Data
         {
             base.OnModelCreating(builder);
             //make composite pk for GroupMember table
-            builder.Entity<GroupMember>().HasKey(gm => new { gm.GroupId, gm.UserId })
+            builder.Entity<GroupMember>().HasKey(gm => new { gm.GroupId, gm.UserId });
             //make composite pk for story view table (story + userid as viewerId)
             builder.Entity<StoryView>().HasKey(sv => new { sv.StoryId, sv.ViewerId });
             //index messages by date sent
@@ -25,9 +25,8 @@ namespace BlazorChat.Data
             builder.Entity<Story>().HasQueryFilter(s => s.ExpiresAt > DateTime.UtcNow);
             //prevent cascading deletes
             builder.Entity<Message>()
-                .HasOne(m => m.Sender)
-                .WithMany(u => u.SentMessages)
-                .HasForeignKey(m => m.SenderId)
+                .HasOne(m => m.Recipient)
+                .WithMany()
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Identity;
 
 namespace BlazorChat.Models
 {
-    // Add profile data for application users by adding properties to the ApplicationUser class
+    // Add profile data for application users by adding properties to the AppUser class
     public class AppUser : IdentityUser
     {
         public string DisplayName { get; set; } = string.Empty;
