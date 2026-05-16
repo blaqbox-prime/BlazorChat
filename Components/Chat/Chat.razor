@@ -1,0 +1,110 @@
+﻿@page "/chat/{UserId}"
+@using Microsoft.AspNetCore.SignalR.Client;
+@* @implements IAsyncDisposable *@
+@inject NavigationManager Nav
+@inject MessageService MessageService
+@inject AuthenticationStateProvider Auth
+@using System.Security.Claims
+@using BlazorChat.DTOs
+
+<div class="chat-container">
+    <div class="chat-header">
+        <span>
+            @partnerName
+        </span>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string UserId { get; set; } = String.Empty;
+    private HubConnection? hubConnection;
+    private List<ChatMessageVm> chatMessages = [];
+    private string inputMessage = String.Empty;
+    private string currentUserId = String.Empty;
+    private string partnerName = String.Empty;
+    private bool partnerOnline = false;
+    private bool isPartnerTyping = false;
+    private CancellationTokenSource? typingDebounce;
+    private bool isConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    //on page load
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await Auth.GetAuthenticationStateAsync();
+        var currentUser = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        //get messages history
+        var messages = await MessageService.GetDirectMessagesAsync(currentUser, UserId);
+
+        //build connection
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/chathub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        //register client event handlers
+        hubConnection.On<MessageDto>("ReceiveMessage", async (msg) =>
+        {
+            if (msg.SenderId == UserId || msg.SenderId == currentUserId)
+            {
+                messages.Add(ChatMessageVm.FromDto(msg, currentUserId));
+                await InvokeAsync(StateHasChanged); //re-render ui
+            }   
+        });
+
+        hubConnection.On<string, string, bool>("UserTyping", async (userId, name, isTyping) =>
+        {
+            if(userId == UserId)
+            {
+                isPartnerTyping = isTyping;
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        hubConnection.On<string, bool>("UserPresenceChanged", async (userId, online) =>
+        {
+            if(userId == UserId)
+            {
+                partnerOnline = online;
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task SendMessage()
+    {
+        if (!isConnected || string.IsNullOrWhiteSpace(inputMessage)) return;
+        await hubConnection!.SendAsync("SendDirectMessage", UserId, inputMessage);
+        inputMessage = string.Empty;
+
+        await hubConnection.SendAsync("UserTyping", UserId, false); //stop typing indicator
+    }
+
+    private async Task OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") { await SendMessage(); return; }
+
+        //debounce typing indicator
+        typingDebounce?.Cancel();
+        typingDebounce = new CancellationTokenSource();
+        await hubConnection!.SendAsync("NotifyTyping", UserId, true);
+        _ = Task.Delay(2000, typingDebounce.Token).ContinueWith(async _ =>
+        {
+            if (!typingDebounce.Token.IsCancellationRequested)
+                await hubConnection!.SendAsync("NotifyTyping", UserId, false);
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+        typingDebounce?.Dispose();
+    }
+
+
+}
