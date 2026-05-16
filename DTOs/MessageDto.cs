@@ -12,5 +12,15 @@ namespace BlazorChat.DTOs
      
         public string? GroupId { get; set; }
 
+        public static MessageDto From(Message message)
+        {
+            return new MessageDto
+            {
+                Content = message.Content,
+                SenderId = message.SenderId.ToString(),
+                RecipientId = message.RecipientId,
+                GroupId = message.GroupId?.ToString()
+            };
+        }
     }
 }
