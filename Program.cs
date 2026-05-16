@@ -33,8 +33,9 @@ builder.Services.AddAuthentication(options =>
     .AddIdentityCookies();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
+
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<AppUser>(options =>
@@ -51,6 +52,8 @@ builder.Services.AddSingleton<IEmailSender<AppUser>, IdentityNoOpEmailSender>();
 builder.Services.AddScoped<IMessageService, MessageService>();
 builder.Services.AddScoped<IStoryService, StoryService>();
 builder.Services.AddSingleton<IPresenceService, PresenceService>();
+// Register in Program.cs:
+builder.Services.AddHostedService<StoryCleanupService>();
 
 
 var app = builder.Build();

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.SignalR;
 using BlazorChat.Services;
 using BlazorChat.Data;
 using Microsoft.EntityFrameworkCore;
+using BlazorChat.Models;
+using BlazorChat.DTOs;
 
 namespace BlazorChat.Hubs
 {
@@ -12,11 +14,13 @@ namespace BlazorChat.Hubs
         private readonly IMessageService _messages;
         private readonly IPresenceService _presence;
         private readonly ApplicationDbContext _db;
+        private readonly IDbContextFactory<ApplicationDbContext> _factory;
 
-        public ChatHub(IMessageService messages, IPresenceService presence, ApplicationDbContext db)
+        public ChatHub(IMessageService messages, IPresenceService presence, ApplicationDbContext db, IDbContextFactory<ApplicationDbContext> factory)
         {
             _messages = messages;
             _presence = presence;
+            _factory = factory;
             _db = db;
 
         }
@@ -90,6 +94,60 @@ namespace BlazorChat.Hubs
             if (user == null) return;
             //notify others in the channel that this user is typing or has stopped typing
             await Clients.OthersInGroup(channelId).UserTyping(channelId, user.DisplayName, isTyping);
+        }
+    
+        public async Task CreateGroup(string name, List<string> memberIds)
+        {
+            // get invoking user
+            var ownerId = Context.UserIdentifier!;
+            await using var db = await _factory.CreateDbContextAsync();
+            //create the group
+            var group = new Group
+            {
+                Name = name
+            };
+            //set the invoking user as the owner
+            group.Members.Add(new GroupMember { UserId = ownerId, Role = GroupRole.Owner });
+            //add others
+            foreach (var memberId in memberIds)
+            {
+                group.Members.Add(new GroupMember { UserId = memberId, Role = GroupRole.Member});
+            }
+
+            db.Groups.Add(group);
+            await db.SaveChangesAsync();
+
+            //add creators connection to the group channel
+            await Groups.AddToGroupAsync(Context.ConnectionId, group.Id.ToString());
+            //notify others of the group
+            foreach (var memberId in memberIds)
+            {
+                await Clients.User(memberId).GroupUpdated(GroupDto.From(group));
+            }
+        }
+
+        public async Task AddMemberToGroup(string groupId, string memberId)
+        {
+            var requesterId = Context.UserIdentifier!;
+            await using var db = await _factory.CreateDbContextAsync();
+
+            //only admin & owner can add members
+            var requesterRole = await db.GroupMembers
+                .Where(gm => gm.GroupId == Guid.Parse(groupId) && gm.UserId == requesterId)
+                .Select(gm => gm.Role)
+                .FirstOrDefaultAsync();
+
+            if (requesterRole == GroupRole.Member) return;
+            db.GroupMembers.Add(new GroupMember
+            {
+                GroupId = Guid.Parse(groupId),
+                UserId = memberId,
+                Role = GroupRole.Member
+            });
+            await db.SaveChangesAsync();
+            //notify the new member
+            var group = await db.Groups.FindAsync(Guid.Parse(groupId));
+            await Clients.User(memberId).GroupUpdated(GroupDto.From(group!));
         }
     }
 }
